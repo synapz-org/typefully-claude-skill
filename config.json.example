@@ -1,0 +1,5 @@
+{
+  "scheduling_enabled": false,
+  "default_threadify": true,
+  "default_share": true
+}
