@@ -10,6 +10,9 @@ A Claude Code skill for managing social media content through the [Typefully](ht
 - **Cross-Posting**: Publish unique content variations across different accounts
 - **Safe by Default**: Draft-only mode prevents accidental publishing
 - **Analytics**: Retrieve performance data and engagement metrics
+- **Notifications**: Monitor publishing events and engagement activity
+- **Enhanced URLs**: Automatic draft and preview URLs in all responses
+- **Improved Error Messages**: Clear, actionable error descriptions
 - **Command-Line Interface**: Use directly via CLI or through Claude Code
 
 ## Prerequisites
@@ -172,6 +175,28 @@ python scripts/typefully_client.py get-analytics \
 python scripts/typefully_client.py list-accounts
 ```
 
+#### Get Notifications
+
+```bash
+# Get activity notifications (publishing events)
+python scripts/typefully_client.py get-notifications \
+  --account personal \
+  --kind activity
+
+# Get inbox notifications (engagement)
+python scripts/typefully_client.py get-notifications \
+  --account personal \
+  --kind inbox
+```
+
+#### Mark Notifications as Read
+
+```bash
+python scripts/typefully_client.py mark-notifications-read \
+  --account personal \
+  --kind activity
+```
+
 ## Python API Usage
 
 ```python
@@ -201,6 +226,14 @@ results = manager.cross_post(
 
 # Get analytics
 analytics = manager.get_analytics(account="personal", days=7)
+
+# Get notifications
+client = manager.get_client("personal")
+activity = client.get_notifications(kind="activity")
+inbox = client.get_notifications(kind="inbox")
+
+# Mark notifications as read
+client.mark_notifications_read(kind="activity")
 ```
 
 ## Thread Formatting

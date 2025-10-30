@@ -111,6 +111,18 @@ python scripts/typefully_client.py create-draft \
     --content "Your tweet content"
 ```
 
+**Enhanced Response:**
+The API now returns convenient URLs for immediate access:
+```json
+{
+  "id": "draft_abc123",
+  "url": "https://typefully.com/?d=draft_abc123",
+  "share_url": "https://typefully.com/share/abc123",
+  "text": "Your tweet content",
+  "scheduled_date": "2024-11-15T14:30:00Z"
+}
+```
+
 ### Workflow 2: Schedule Post (When Enabled)
 
 **Use Case:** Schedule content for future publication
@@ -212,6 +224,65 @@ python scripts/typefully_client.py get-analytics \
 python scripts/typefully_client.py list-accounts
 ```
 
+### Workflow 6: Monitor Notifications
+
+**Use Case:** Track publishing events and engagement notifications
+
+**Notification Types:**
+- **activity**: Draft published, scheduled posts, AutoRT, AutoPlug events
+- **inbox**: Comments, replies, engagement notifications
+
+**Process:**
+```python
+manager = TypefullyManager()
+client = manager.get_client("personal")
+
+# Get activity notifications (publishing events)
+activity = client.get_notifications(kind="activity")
+
+# Get inbox notifications (engagement)
+inbox = client.get_notifications(kind="inbox")
+
+# Mark notifications as read
+client.mark_notifications_read(kind="activity")
+```
+
+**Command-line usage:**
+```bash
+# Get activity notifications
+python scripts/typefully_client.py get-notifications \
+    --account personal \
+    --kind activity
+
+# Get inbox notifications
+python scripts/typefully_client.py get-notifications \
+    --account personal \
+    --kind inbox
+
+# Mark notifications as read
+python scripts/typefully_client.py mark-notifications-read \
+    --account personal \
+    --kind activity
+```
+
+**Notification Response:**
+```json
+{
+  "notifications": [
+    {
+      "id": "notif_123",
+      "kind": "activity",
+      "payload": {
+        "action": "draft_published",
+        "draft_id": "draft_xyz",
+        "url": "https://twitter.com/username/status/123",
+        "success": true
+      }
+    }
+  ]
+}
+```
+
 ## Thread Formatting
 
 ### Creating Multi-Tweet Threads
@@ -272,6 +343,13 @@ Load reference when:
 - Troubleshooting authentication
 
 ## Error Handling
+
+The client provides clear, user-friendly error messages for common issues:
+
+- **401 Unauthorized**: "Invalid API key. Check your configuration and regenerate if needed."
+- **403 Forbidden**: "API key doesn't have permission for this operation."
+- **429 Rate Limit**: "Rate limit exceeded. Please wait a few minutes before trying again."
+- **400 Bad Request**: Detailed error message with specific parameter issues
 
 Common issues and solutions:
 

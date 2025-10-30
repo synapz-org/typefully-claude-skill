@@ -38,6 +38,57 @@ class TypefullyClient:
             "Content-Type": "application/json"
         }
 
+    @staticmethod
+    def get_draft_url(draft_id: str) -> str:
+        """
+        Get Typefully editor URL for draft
+
+        Args:
+            draft_id: Draft ID
+
+        Returns:
+            URL to edit draft in Typefully
+        """
+        return f"https://typefully.com/?d={draft_id}"
+
+    @staticmethod
+    def get_share_url(share_id: str) -> str:
+        """
+        Get shareable preview URL for draft
+
+        Args:
+            share_id: Share ID from API response
+
+        Returns:
+            Public URL to preview draft
+        """
+        return f"https://typefully.com/share/{share_id}"
+
+    def _handle_request_error(self, error: requests.HTTPError, context: str = "") -> None:
+        """
+        Convert HTTP errors to user-friendly messages
+
+        Args:
+            error: HTTP error from requests
+            context: Additional context about the operation
+        """
+        status_code = error.response.status_code
+
+        if status_code == 401:
+            raise ValueError(f"Invalid API key. Check your configuration and regenerate if needed.")
+        elif status_code == 403:
+            raise ValueError(f"API key doesn't have permission for this operation.")
+        elif status_code == 429:
+            raise ValueError(f"Rate limit exceeded. Please wait a few minutes before trying again.")
+        elif status_code == 400:
+            try:
+                error_detail = error.response.json()
+                raise ValueError(f"Bad request: {error_detail}")
+            except:
+                raise ValueError(f"Bad request. Check your input parameters.")
+        else:
+            raise ValueError(f"Typefully API error ({status_code}): {error.response.text}")
+
     def create_draft(
         self,
         content: str,
@@ -59,7 +110,14 @@ class TypefullyClient:
             auto_plug: Enable AutoPlug per account settings
 
         Returns:
-            API response dict with draft details
+            Enhanced API response dict with draft details:
+            {
+                "id": "draft_abc123",
+                "url": "https://typefully.com/?d=draft_abc123",
+                "share_url": "https://typefully.com/share/abc123",
+                "scheduled_date": "2024-11-15T14:30:00Z" (if scheduled),
+                ... (other API fields)
+            }
         """
         endpoint = f"{self.BASE_URL}/drafts/"
 
@@ -74,9 +132,21 @@ class TypefullyClient:
         if schedule_date:
             payload["schedule-date"] = schedule_date
 
-        response = requests.post(endpoint, headers=self.headers, json=payload)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.post(endpoint, headers=self.headers, json=payload)
+            response.raise_for_status()
+            result = response.json()
+
+            # Enhance response with convenient URLs
+            if "id" in result:
+                result["url"] = self.get_draft_url(result["id"])
+            if "share_url" not in result and "id" in result:
+                # Generate share URL from draft ID if not provided
+                result["share_url"] = self.get_share_url(result["id"])
+
+            return result
+        except requests.HTTPError as e:
+            self._handle_request_error(e, "creating draft")
 
     def get_recently_scheduled(self, content_filter: Optional[str] = None) -> Dict:
         """
@@ -86,44 +156,113 @@ class TypefullyClient:
             content_filter: Filter by "threads" or "tweets"
 
         Returns:
-            API response dict with scheduled drafts
+            API response dict with scheduled drafts including metadata:
+            {
+                "drafts": [
+                    {
+                        "id": "draft_abc123",
+                        "text": "Full thread content",
+                        "text_first_tweet": "First tweet preview",
+                        "num_tweets": 3,
+                        "scheduled_date": "2024-11-15T14:30:00Z",
+                        "url": "https://typefully.com/?d=draft_abc123"
+                    }
+                ]
+            }
         """
         endpoint = f"{self.BASE_URL}/drafts/recently-scheduled/"
         params = {}
         if content_filter:
             params["content_filter"] = content_filter
 
-        response = requests.get(endpoint, headers=self.headers, params=params)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.get(endpoint, headers=self.headers, params=params)
+            response.raise_for_status()
+            result = response.json()
+
+            # Enhance drafts with URLs
+            if "drafts" in result:
+                for draft in result["drafts"]:
+                    if "id" in draft and "url" not in draft:
+                        draft["url"] = self.get_draft_url(draft["id"])
+
+            return result
+        except requests.HTTPError as e:
+            self._handle_request_error(e, "retrieving scheduled drafts")
 
     def get_recently_published(self) -> Dict:
         """
         Retrieve recently published drafts
 
         Returns:
-            API response dict with published drafts
+            API response dict with published drafts including metadata:
+            {
+                "drafts": [
+                    {
+                        "id": "draft_xyz789",
+                        "text": "Tweet content",
+                        "text_first_tweet": "First tweet",
+                        "num_tweets": 1,
+                        "published_on": "2024-11-10T09:00:00Z",
+                        "url": "https://typefully.com/?d=draft_xyz789"
+                    }
+                ]
+            }
         """
         endpoint = f"{self.BASE_URL}/drafts/recently-published/"
-        response = requests.get(endpoint, headers=self.headers)
-        response.raise_for_status()
-        return response.json()
+
+        try:
+            response = requests.get(endpoint, headers=self.headers)
+            response.raise_for_status()
+            result = response.json()
+
+            # Enhance drafts with URLs
+            if "drafts" in result:
+                for draft in result["drafts"]:
+                    if "id" in draft and "url" not in draft:
+                        draft["url"] = self.get_draft_url(draft["id"])
+
+            return result
+        except requests.HTTPError as e:
+            self._handle_request_error(e, "retrieving published drafts")
 
     def get_notifications(self, kind: str = "activity") -> Dict:
         """
-        Get latest notifications (useful for analytics)
+        Get latest notifications for analytics and engagement tracking
 
         Args:
             kind: "inbox" (comments/replies) or "activity" (publishing events)
 
         Returns:
-            API response dict with notifications
+            API response dict with notifications:
+            {
+                "notifications": [
+                    {
+                        "id": "notif_123",
+                        "kind": "activity",
+                        "payload": {
+                            "action": "draft_published",
+                            "draft_id": "draft_xyz",
+                            "url": "https://twitter.com/...",
+                            "success": true
+                        }
+                    }
+                ]
+            }
+
+        Notification types:
+            activity: draft_published, scheduled_draft_published, auto_plug_published, auto_retweet_published
+            inbox: new_reply, new_comment
         """
         endpoint = f"{self.BASE_URL}/notifications/"
         params = {"kind": kind}
-        response = requests.get(endpoint, headers=self.headers, params=params)
-        response.raise_for_status()
-        return response.json()
+
+        try:
+            response = requests.get(endpoint, headers=self.headers, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.HTTPError as e:
+            self._handle_request_error(e, "retrieving notifications")
 
     def mark_notifications_read(self, kind: Optional[str] = None, username: Optional[str] = None) -> Dict:
         """
@@ -143,9 +282,12 @@ class TypefullyClient:
         if username:
             payload["username"] = username
 
-        response = requests.post(endpoint, headers=self.headers, json=payload)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.post(endpoint, headers=self.headers, json=payload)
+            response.raise_for_status()
+            return response.json()
+        except requests.HTTPError as e:
+            self._handle_request_error(e, "marking notifications as read")
 
 
 class TypefullyManager:
@@ -271,7 +413,8 @@ class TypefullyManager:
                 )
                 results[account] = result
                 status = "scheduled" if schedule and self.config["scheduling_enabled"] else "drafted"
-                print(f"✅ {account}: {status}")
+                url = result.get("url", "")
+                print(f"✅ {account}: {status} - {url}")
             except Exception as e:
                 print(f"❌ {account}: Error - {str(e)}")
                 results[account] = {"error": str(e)}
@@ -332,6 +475,18 @@ def main():
     analytics_parser.add_argument("--account", required=True, help="Account name")
     analytics_parser.add_argument("--days", type=int, default=7, help="Days to look back")
 
+    # get-notifications command
+    notif_parser = subparsers.add_parser("get-notifications", help="Get notifications")
+    notif_parser.add_argument("--account", required=True, help="Account name")
+    notif_parser.add_argument("--kind", default="activity", choices=["activity", "inbox"],
+                              help="Notification type (activity or inbox)")
+
+    # mark-notifications-read command
+    mark_parser = subparsers.add_parser("mark-notifications-read", help="Mark notifications as read")
+    mark_parser.add_argument("--account", required=True, help="Account name")
+    mark_parser.add_argument("--kind", choices=["activity", "inbox"], help="Notification type to mark")
+    mark_parser.add_argument("--username", help="Specific username to mark")
+
     # list-accounts command
     subparsers.add_parser("list-accounts", help="List configured accounts")
 
@@ -352,6 +507,14 @@ def main():
             schedule=args.schedule,
             schedule_date=args.schedule_date
         )
+        # Show URL prominently
+        if "url" in result:
+            status = "scheduled" if args.schedule and manager.config["scheduling_enabled"] else "draft created"
+            print(f"\n✅ Draft {status}")
+            print(f"📝 Edit: {result['url']}")
+            if "share_url" in result:
+                print(f"🔗 Preview: {result['share_url']}")
+            print()
         print(json.dumps(result, indent=2))
 
     elif args.command == "cross-post":
@@ -371,6 +534,16 @@ def main():
 
     elif args.command == "get-analytics":
         result = manager.get_analytics(args.account, days=args.days)
+        print(json.dumps(result, indent=2))
+
+    elif args.command == "get-notifications":
+        client = manager.get_client(args.account)
+        result = client.get_notifications(kind=args.kind)
+        print(json.dumps(result, indent=2))
+
+    elif args.command == "mark-notifications-read":
+        client = manager.get_client(args.account)
+        result = client.mark_notifications_read(kind=args.kind, username=args.username)
         print(json.dumps(result, indent=2))
 
     elif args.command == "list-accounts":
