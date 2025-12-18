@@ -1,246 +1,450 @@
-# Typefully API Reference
+# Typefully API Reference (v2)
 
-This document provides detailed reference for the Typefully API endpoints and usage patterns.
+This document provides detailed reference for the Typefully API v2 endpoints and usage patterns.
 
 ## Authentication
 
-**Method:** API Key in Header
-**Header Name:** `X-API-KEY`
+**Method:** Bearer Token in Authorization Header
+**Header Name:** `Authorization`
 **Format:** `Bearer YOUR_API_KEY`
 
-### Obtaining API Keys
+```
+Authorization: Bearer YOUR_API_KEY
+```
 
-1. Log into your Typefully account
-2. Navigate to Settings > Integrations
-3. Generate an API key for each social media account you want to manage
-4. **Important:** Each social media account in Typefully requires its own API key
+### API Key Permissions
+
+API keys inherit permissions from the user who created them:
+- **WRITE**: Can create drafts
+- **PUBLISH**: Can schedule and publish drafts
+
+Generate API keys from Typefully Settings > Integrations.
 
 ## Base URL
 
 ```
-https://api.typefully.com/v1
+https://api.typefully.com/v2
 ```
+
+## Rate Limiting & Pagination
+
+### Rate Limits
+- Rate-limited per user and social set basis
+- HTTP 429 responses indicate exceeded limits
+- Implement exponential backoff when rate limited
+
+### Pagination
+List endpoints use limit-offset pagination:
+- **Default limit**: 10 items
+- **Maximum limit**: 50 items
+
+**Response format:**
+```json
+{
+  "results": [...],
+  "count": 100,
+  "limit": 10,
+  "offset": 0,
+  "next": "https://api.typefully.com/v2/...",
+  "previous": null
+}
+```
+
+## Supported Platforms
+
+API v2 supports multi-platform publishing:
+- **x** - X (Twitter)
+- **linkedin** - LinkedIn
+- **mastodon** - Mastodon
+- **threads** - Threads
+- **bluesky** - Bluesky
 
 ## Endpoints
 
-### 1. Create Draft
+### 1. Get User Info
 
-**Endpoint:** `POST /v1/drafts/`
+**Endpoint:** `GET /v2/me`
 
-Creates a new draft or scheduled post in Typefully.
+Retrieve authenticated user details.
 
-**Request Headers:**
-```
-X-API-KEY: Bearer YOUR_API_KEY
-Content-Type: application/json
-```
-
-**Request Body:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `content` | string | Yes | Tweet text. Use 4 consecutive newlines (`\n\n\n\n`) to split into multiple tweets |
-| `threadify` | boolean | No | Auto-split content into tweets based on character limits |
-| `share` | boolean | No | Include a shareable URL in the response |
-| `schedule-date` | string | No | ISO 8601 date string or `"next-free-slot"`. If omitted, creates draft without scheduling |
-| `auto_retweet_enabled` | boolean | No | Enable AutoRT feature per account settings |
-| `auto_plug_enabled` | boolean | No | Enable AutoPlug feature per account settings |
-
-**Example Request:**
+**Response:**
 ```json
 {
-  "content": "First tweet of the thread\n\n\n\nSecond tweet of the thread\n\n\n\nThird tweet",
-  "threadify": true,
-  "share": true,
-  "schedule-date": "2024-11-15T14:30:00Z"
+  "email": "user@example.com",
+  "name": "User Name",
+  "signup_date": "2024-01-15T10:30:00Z",
+  "profile_image": "https://..."
 }
 ```
 
-**Example Response:**
+### 2. List Social Sets
+
+**Endpoint:** `GET /v2/social-sets`
+
+List all accessible social sets (account groups).
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `limit` | integer | Results per page (max 50) |
+| `offset` | integer | Pagination offset |
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "id": "social_set_abc123",
+      "name": "My Brand",
+      "x": {"username": "mybrand", "connected": true},
+      "linkedin": {"connected": false},
+      "mastodon": {"connected": false},
+      "threads": {"connected": false},
+      "bluesky": {"connected": false}
+    }
+  ],
+  "count": 1,
+  "limit": 10,
+  "offset": 0
+}
+```
+
+### 3. Get Social Set Details
+
+**Endpoint:** `GET /v2/social-sets/{social_set_id}/`
+
+Get detailed platform configuration for a social set.
+
+**Response:**
+```json
+{
+  "id": "social_set_abc123",
+  "name": "My Brand",
+  "x": {
+    "username": "mybrand",
+    "connected": true,
+    "followers_count": 5000
+  },
+  "linkedin": {
+    "connected": true,
+    "profile_url": "https://linkedin.com/in/mybrand"
+  }
+}
+```
+
+### 4. List Drafts
+
+**Endpoint:** `GET /v2/social-sets/{social_set_id}/drafts`
+
+List drafts for a social set, ordered by last edited.
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `status` | string | Filter by status: `draft`, `scheduled`, `published`, `publishing`, `error` |
+| `limit` | integer | Results per page (max 50) |
+| `offset` | integer | Pagination offset |
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "id": "draft_xyz789",
+      "status": "scheduled",
+      "created_at": "2024-11-15T10:00:00Z",
+      "updated_at": "2024-11-15T12:30:00Z",
+      "scheduled_date": "2024-11-16T14:30:00Z",
+      "preview": "First 180 characters of content...",
+      "share_url": "https://typefully.com/share/abc123",
+      "private_url": "https://typefully.com/private/xyz789"
+    }
+  ],
+  "count": 5,
+  "limit": 10,
+  "offset": 0
+}
+```
+
+### 5. Create Draft
+
+**Endpoint:** `POST /v2/social-sets/{social_set_id}/drafts`
+
+Create a new draft with platform-specific content.
+
+**Request Body:**
+
+```json
+{
+  "platforms": {
+    "x": {
+      "enabled": true,
+      "posts": [
+        {"text": "First tweet of the thread"},
+        {"text": "Second tweet with more details"},
+        {"text": "Final tweet wrapping up"}
+      ],
+      "settings": {}
+    },
+    "linkedin": {
+      "enabled": true,
+      "posts": [
+        {"text": "LinkedIn version of the content"}
+      ],
+      "settings": {}
+    }
+  },
+  "draft_title": "My Thread Title",
+  "publish_at": "next-free-slot",
+  "share": true,
+  "tags": ["product-launch", "announcement"]
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `platforms` | object | Yes | Platform-specific content and settings |
+| `draft_title` | string | No | Internal title for the draft |
+| `publish_at` | string | No | `"now"`, `"next-free-slot"`, or ISO-8601 datetime. Omit for draft-only. |
+| `share` | boolean | No | Include shareable URL in response |
+| `tags` | array | No | List of tag slugs (not names) |
+
+**Platform Object:**
+
+Each platform in `platforms` has:
+- `enabled`: boolean - Whether to post to this platform
+- `posts`: array - List of post objects with `text` field
+- `settings`: object - Platform-specific settings
+
+**Response:**
 ```json
 {
   "id": "draft_abc123",
+  "status": "scheduled",
+  "created_at": "2024-11-15T10:00:00Z",
+  "updated_at": "2024-11-15T10:00:00Z",
+  "scheduled_date": "2024-11-15T14:30:00Z",
+  "preview": "First tweet of the thread",
   "share_url": "https://typefully.com/share/abc123",
-  "scheduled_at": "2024-11-15T14:30:00Z",
-  "status": "scheduled"
+  "private_url": "https://typefully.com/private/abc123"
 }
 ```
 
-### 2. Retrieve Recently Scheduled Drafts
+### 6. Get Draft
 
-**Endpoint:** `GET /v1/drafts/recently-scheduled/`
+**Endpoint:** `GET /v2/social-sets/{social_set_id}/drafts/{draft_id}`
 
-Fetches drafts that have been scheduled for future publication.
+Retrieve a specific draft with full details.
 
-**Query Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `content_filter` | string | No | Filter by content type: `"threads"` or `"tweets"` |
-
-**Example Request:**
-```
-GET /v1/drafts/recently-scheduled/?content_filter=threads
-```
-
-**Example Response:**
+**Response:**
 ```json
 {
-  "drafts": [
-    {
-      "id": "draft_abc123",
-      "content": "Thread content...",
-      "scheduled_at": "2024-11-15T14:30:00Z",
-      "type": "thread"
+  "id": "draft_abc123",
+  "status": "scheduled",
+  "created_at": "2024-11-15T10:00:00Z",
+  "updated_at": "2024-11-15T12:30:00Z",
+  "scheduled_date": "2024-11-16T14:30:00Z",
+  "published_at": null,
+  "preview": "First 180 characters...",
+  "share_url": "https://typefully.com/share/abc123",
+  "private_url": "https://typefully.com/private/abc123",
+  "x_published_url": null,
+  "linkedin_published_url": null,
+  "platforms": {
+    "x": {
+      "enabled": true,
+      "posts": [{"text": "Tweet content"}],
+      "settings": {}
     }
-  ]
+  },
+  "tags": ["product-launch"]
 }
 ```
 
-### 3. Retrieve Recently Published Drafts
+### 7. Update Draft
 
-**Endpoint:** `GET /v1/drafts/recently-published/`
+**Endpoint:** `PATCH /v2/social-sets/{social_set_id}/drafts/{draft_id}`
 
-Fetches drafts that have been published.
+Partial update of an existing draft.
 
-**Example Request:**
-```
-GET /v1/drafts/recently-published/
-```
-
-**Example Response:**
+**Request Body:** (all fields optional)
 ```json
 {
-  "drafts": [
-    {
-      "id": "draft_xyz789",
-      "content": "Published tweet...",
-      "published_at": "2024-11-10T09:00:00Z",
-      "engagement": {
-        "likes": 42,
-        "retweets": 7,
-        "replies": 3
-      }
+  "platforms": {
+    "x": {
+      "enabled": true,
+      "posts": [{"text": "Updated content"}],
+      "settings": {}
     }
-  ]
+  },
+  "draft_title": "Updated Title",
+  "publish_at": "2024-11-20T10:00:00Z",
+  "tags": ["updated-tag"]
 }
 ```
 
-### 4. Get Latest Notifications
+**Response:** Updated draft object
 
-**Endpoint:** `GET /v1/notifications/`
+## Draft Status Values
 
-Retrieves notifications for the account. Useful for tracking engagement and publishing activity.
+| Status | Description |
+|--------|-------------|
+| `draft` | Saved but not scheduled |
+| `scheduled` | Scheduled for future publication |
+| `publishing` | Currently being published |
+| `published` | Successfully published |
+| `error` | Publication failed |
 
-**Query Parameters:**
+## Published URLs
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `kind` | string | No | Filter type: `"inbox"` (comments/replies) or `"activity"` (publishing events) |
+After publication, drafts include platform-specific URLs:
+- `x_published_url`: Link to X/Twitter post
+- `linkedin_published_url`: Link to LinkedIn post
+- `mastodon_published_url`: Link to Mastodon post
+- `threads_published_url`: Link to Threads post
+- `bluesky_published_url`: Link to Bluesky post
 
-**Example Request:**
+## Webhooks
+
+### Supported Events
+
+| Event | Description |
+|-------|-------------|
+| `draft.created` | New draft created |
+| `draft.scheduled` | Draft scheduled for publication |
+| `draft.published` | Draft successfully published |
+| `draft.status_changed` | Draft status changed |
+| `draft.tags_changed` | Draft tags modified |
+| `draft.deleted` | Draft deleted |
+
+### Webhook Headers
+
+| Header | Description |
+|--------|-------------|
+| `X-Typefully-Event` | Event type |
+| `X-Typefully-Timestamp` | Unix timestamp |
+| `X-Typefully-Signature` | HMAC-SHA256 signature |
+
+### Signature Verification
+
+```python
+import hmac
+import hashlib
+
+def verify_webhook(payload, signature, secret, timestamp):
+    expected = hmac.new(
+        secret.encode(),
+        f"{timestamp}.{payload}".encode(),
+        hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
 ```
-GET /v1/notifications/?kind=activity
-```
 
-**Example Response:**
+### Retry Policy
+- Failed deliveries retry 5 times over 1 hour
+- Auto-disables after 100 consecutive failures
+
+## Error Handling
+
+### HTTP Status Codes
+
+| Code | Description |
+|------|-------------|
+| `200` | Success |
+| `400` | Bad Request - Invalid parameters |
+| `401` | Unauthorized - Invalid/missing API key |
+| `403` | Forbidden - Insufficient permissions |
+| `404` | Not Found - Resource doesn't exist |
+| `429` | Rate Limit Exceeded |
+| `500` | Internal Server Error |
+
+### Error Response Format
+
 ```json
 {
-  "notifications": [
-    {
-      "id": "notif_123",
-      "kind": "activity",
-      "payload": {
-        "action": "published",
-        "draft_id": "draft_xyz789",
-        "timestamp": "2024-11-10T09:00:00Z"
-      }
-    }
-  ]
-}
-```
-
-### 5. Mark Notifications as Read
-
-**Endpoint:** `POST /v1/notifications/mark-all-read/`
-
-Marks notifications as read, optionally filtering by type or username.
-
-**Request Body:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `kind` | string | No | Filter by `"inbox"` or `"activity"` |
-| `username` | string | No | Mark read for specific account only |
-
-**Example Request:**
-```json
-{
-  "kind": "activity"
+  "error": "invalid_request",
+  "message": "The 'platforms' field is required",
+  "details": {
+    "field": "platforms",
+    "code": "required"
+  }
 }
 ```
 
 ## Content Formatting
 
-### Thread Splitting
+### Thread/Multi-Post Content
 
-To create a multi-tweet thread, use **4 consecutive newlines** to separate tweets:
+The v2 API uses an explicit posts array instead of newline separation:
 
+```json
+{
+  "platforms": {
+    "x": {
+      "enabled": true,
+      "posts": [
+        {"text": "First tweet"},
+        {"text": "Second tweet"},
+        {"text": "Third tweet"}
+      ]
+    }
+  }
+}
 ```
-First tweet content
 
-Second tweet content
+For backward compatibility with content using 4 newlines, the Python client automatically converts:
+```
+"First tweet\n\n\n\nSecond tweet\n\n\n\nThird tweet"
+```
+into the posts array format.
 
-Third tweet content
+### Platform-Specific Content
+
+You can provide different content for each platform:
+
+```json
+{
+  "platforms": {
+    "x": {
+      "enabled": true,
+      "posts": [{"text": "Short tweet version"}]
+    },
+    "linkedin": {
+      "enabled": true,
+      "posts": [{"text": "Longer, more professional LinkedIn version with additional context..."}]
+    }
+  }
+}
 ```
 
-In JSON, this is represented as: `"First tweet\n\n\n\nSecond tweet\n\n\n\nThird tweet"`
+## Tags
 
-### Auto-Threadify
+Tags use slugs (URL-friendly identifiers), not display names:
+- Display name: "Product Launch"
+- Slug: `product-launch`
 
-Setting `threadify: true` allows Typefully to automatically split content based on character limits. This is useful for long-form content.
+Retrieve available tags through the Typefully dashboard to get correct slugs.
 
-## Scheduling
+## Account-Level Settings
 
-### Schedule Date Formats
-
-1. **ISO 8601 format:** `"2024-11-15T14:30:00Z"`
-2. **Next available slot:** `"next-free-slot"` (uses Typefully's scheduling algorithm)
-
-### Draft-Only Mode
-
-Omit the `schedule-date` parameter to create a draft without scheduling. The draft will appear in your Typefully dashboard for manual review and scheduling.
-
-## Rate Limits and Constraints
-
-**Important:** The Typefully API is designed for **personal automations and workflows**, not public applications. For building public apps, use the X (Twitter) API instead.
-
-- Always respect X's automation and general usage rules
-- Excessive automation may result in account suspension
-- No official rate limits documented, but use responsibly
-
-## Error Handling
-
-Common HTTP status codes:
-
-- `200 OK` - Request successful
-- `400 Bad Request` - Invalid parameters
-- `401 Unauthorized` - Invalid or missing API key
-- `403 Forbidden` - API key doesn't have permission for this account
-- `429 Too Many Requests` - Rate limit exceeded (use exponential backoff)
-- `500 Internal Server Error` - Server-side issue
+These settings apply automatically based on Typefully account configuration:
+- **Auto-Retweet**: Automatically retweets your posts
+- **Auto-Plug**: Adds promotional content to high-performing posts
+- **Natural Posting Time**: Varies exact publish time for natural appearance
 
 ## Best Practices
 
-1. **Multiple Accounts:** Create separate API keys for each social media account
-2. **Draft First:** Start with draft-only mode until confident in automation quality
-3. **Content Validation:** Always validate content before scheduling
-4. **Error Handling:** Implement robust error handling for API calls
-5. **Testing:** Test with drafts before enabling auto-scheduling
+1. **Start with Drafts**: Omit `publish_at` to create drafts for review
+2. **Use Social Set Caching**: Cache social set IDs to reduce API calls
+3. **Handle Rate Limits**: Implement exponential backoff on 429 errors
+4. **Verify Webhooks**: Always validate webhook signatures
+5. **Platform Permissions**: Ensure API key has PUBLISH permission for scheduling
 
 ## Python Client Usage
 
-The included `typefully_client.py` script provides a high-level interface:
+The included `typefully_client.py` provides a high-level interface:
 
 ```python
 from typefully_client import TypefullyManager
@@ -248,29 +452,53 @@ from typefully_client import TypefullyManager
 # Initialize manager (loads accounts from .env)
 manager = TypefullyManager()
 
-# Create a draft
-manager.create_draft(
-    account="personal",
-    content="Your tweet content",
-    schedule=False  # Draft only
+# Create a draft for X
+result = manager.create_draft(
+    account="covenant",
+    content="Your post content",
+    platforms=["x"],
+    schedule=False
+)
+
+# Create multi-platform draft
+result = manager.create_draft(
+    account="covenant",
+    content="Multi-platform announcement",
+    platforms=["x", "linkedin"],
+    schedule=True,
+    schedule_date="next-free-slot"
 )
 
 # Cross-post to multiple accounts
 manager.cross_post(
-    accounts=["personal", "company"],
+    accounts=["covenant", "basilica", "templar"],
     content_map={
-        "personal": "Casual tweet...",
-        "company": "Professional announcement..."
+        "covenant": "Ecosystem announcement...",
+        "basilica": "Infrastructure update...",
+        "templar": "Miner-focused content..."
     },
-    schedule=False
+    platforms=["x"]
 )
 
 # Get analytics
-analytics = manager.get_analytics(account="personal", days=7)
+analytics = manager.get_analytics(account="covenant", limit=20)
+
+# List social sets
+sets = manager.get_social_sets_info(account="covenant")
 ```
+
+## Migration from v1
+
+Key changes from API v1:
+1. **Authentication**: `X-API-KEY: Bearer token` -> `Authorization: Bearer token`
+2. **Social Sets**: Drafts now require `social_set_id` in path
+3. **Content Structure**: Use `platforms` object with `posts` array instead of `content` string
+4. **Endpoints**: New path structure `/v2/social-sets/{id}/drafts`
+5. **Pagination**: Proper limit-offset pagination on list endpoints
+6. **Status Values**: New statuses including `publishing` and `error`
 
 ## Additional Resources
 
-- Official Documentation: https://support.typefully.com/en/articles/8718287-typefully-api
+- Official Documentation: https://typefully.com/docs/api
 - Typefully Dashboard: https://typefully.com
-- Support: Contact Typefully support through their help center
+- X Automation Rules: Review before building X automation

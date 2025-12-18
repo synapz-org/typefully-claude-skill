@@ -1,16 +1,24 @@
 ---
 name: typefully
-description: This skill should be used when managing social media content through Typefully, including creating drafts, scheduling posts, cross-posting to multiple accounts with unique content, and retrieving analytics. Use it for Twitter/X thread creation, multi-account management, and social media workflow automation via the Typefully API.
+description: This skill should be used when managing social media content through Typefully, including creating drafts, scheduling posts, cross-posting to multiple accounts, and multi-platform publishing (X, LinkedIn, Threads, Bluesky, Mastodon). Use it for social media management, thread creation, and workflow automation via the Typefully API v2.
 ---
 
 # Typefully Social Media Management Skill
 
 ## Overview
 
-This skill enables Claude to interact with the Typefully API for professional social media management. Typefully is a platform for drafting, scheduling, and analyzing social media content across multiple accounts.
+This skill enables Claude to interact with the Typefully API v2 for professional social media management. Typefully is a platform for drafting, scheduling, and analyzing social media content across multiple accounts and platforms.
+
+**Supported Platforms:**
+- **X (Twitter)** - Tweets and threads
+- **LinkedIn** - Professional posts
+- **Threads** - Meta's text-based platform
+- **Bluesky** - Decentralized social network
+- **Mastodon** - Federated social platform
 
 **Key Capabilities:**
 - Create drafts and scheduled posts
+- Multi-platform publishing from a single draft
 - Cross-post content to multiple accounts with unique adaptations
 - Retrieve analytics and engagement data
 - Manage multiple social media accounts through a unified interface
@@ -19,18 +27,19 @@ This skill enables Claude to interact with the Typefully API for professional so
 ## When to Use This Skill
 
 Use this skill when:
-- Creating Twitter/X threads or single tweets
+- Creating posts for X, LinkedIn, Threads, or Bluesky
 - Scheduling social media content for future publication
-- Cross-posting announcements to multiple branded accounts
-- Adapting content for different audiences across accounts
+- Cross-posting announcements to multiple accounts
+- Publishing the same content to multiple platforms simultaneously
 - Retrieving social media analytics and performance data
 - Managing social media workflows programmatically
 
 **Example triggers:**
 - "Create a Twitter thread about [topic] for my personal account"
-- "Schedule this announcement to post tomorrow at 2pm"
+- "Post this announcement to both X and LinkedIn"
+- "Schedule this post for tomorrow at 2pm"
 - "Cross-post this to my company and personal accounts with appropriate adaptations"
-- "Show me last week's Twitter analytics"
+- "Show me last week's analytics"
 
 ## Setup and Configuration
 
@@ -40,7 +49,7 @@ Use this skill when:
    - Log into Typefully dashboard (https://typefully.com)
    - Navigate to Settings > Integrations
    - Generate an API key for each social media account
-   - **Important:** Each account requires its own API key
+   - **Note:** API keys inherit permissions from your user account
 
 2. **Configure the Skill:**
    - Create a `.env` file in the skill directory
@@ -60,7 +69,7 @@ TYPEFULLY_API_KEY_PROJECT=your_project_account_key
 ```json
 {
   "scheduling_enabled": false,
-  "default_threadify": true,
+  "default_platforms": ["x"],
   "default_share": true
 }
 ```
@@ -75,13 +84,13 @@ TYPEFULLY_API_KEY_PROJECT=your_project_account_key
 **Enable Scheduling:**
 - Set `scheduling_enabled: true` in `config.json`
 - Only enable after validating draft quality
-- Consider integrating with brand voice validation before enabling
+- Requires PUBLISH permission on API key
 
 ## Core Workflows
 
 ### Workflow 1: Create Draft for Single Account
 
-**Use Case:** Draft a tweet or thread for review before publishing
+**Use Case:** Draft a post for review before publishing
 
 **Process:**
 1. Use `scripts/typefully_client.py` to interact with the API
@@ -96,40 +105,73 @@ from typefully_client import TypefullyManager
 
 manager = TypefullyManager()
 
-# Create draft for review
+# Create draft for review (X only)
 result = manager.create_draft(
     account="personal",
     content="Your tweet content here.\n\n\n\nSecond tweet in thread.",
-    schedule=False  # Draft only
+    platforms=["x"],
+    schedule=False
 )
+print(f"Edit draft: {result['edit_url']}")
 ```
 
 **Command-line usage:**
 ```bash
 python scripts/typefully_client.py create-draft \
     --account personal \
-    --content "Your tweet content"
+    --content "Your tweet content" \
+    --platforms x
 ```
 
-**Enhanced Response:**
-The API now returns convenient URLs for immediate access:
+**Response:**
 ```json
 {
   "id": "draft_abc123",
-  "url": "https://typefully.com/?d=draft_abc123",
+  "status": "draft",
+  "edit_url": "https://typefully.com/?d=draft_abc123",
   "share_url": "https://typefully.com/share/abc123",
-  "text": "Your tweet content",
-  "scheduled_date": "2024-11-15T14:30:00Z"
+  "scheduled_date": null
 }
 ```
 
-### Workflow 2: Schedule Post (When Enabled)
+### Workflow 2: Multi-Platform Publishing
+
+**Use Case:** Post the same announcement to X and LinkedIn
+
+**Example:**
+```python
+manager = TypefullyManager()
+
+result = manager.create_draft(
+    account="company",
+    content="Major product update announcement.",
+    platforms=["x", "linkedin"],
+    schedule=True,
+    schedule_date="next-free-slot"
+)
+```
+
+**Command-line usage:**
+```bash
+python scripts/typefully_client.py create-draft \
+    --account company \
+    --content "Major product update" \
+    --platforms x linkedin \
+    --schedule
+```
+
+**Notes:**
+- The same content is posted to all specified platforms
+- Platform-specific formatting is handled by Typefully
+- LinkedIn posts work best with longer, more professional content
+
+### Workflow 3: Schedule Post (When Enabled)
 
 **Use Case:** Schedule content for future publication
 
 **Prerequisites:**
 - `scheduling_enabled: true` in `config.json`
-- Content has passed quality validation
+- API key has PUBLISH permission
 
 **Process:**
 ```python
@@ -138,19 +180,20 @@ manager = TypefullyManager()
 result = manager.create_draft(
     account="company",
     content="Scheduled announcement content",
+    platforms=["x"],
     schedule=True,
-    schedule_date="2024-11-15T14:30:00Z"  # ISO format or "next-free-slot"
+    schedule_date="2024-12-20T14:30:00Z"  # ISO format or "next-free-slot"
 )
 ```
 
-**Notes:**
-- If `scheduling_enabled` is false, the skill will create a draft only (safety mechanism)
-- Use "next-free-slot" to let Typefully choose optimal timing
-- Always verify the schedule_date format
+**Scheduling Options:**
+- `"now"` - Publish immediately
+- `"next-free-slot"` - Use Typefully's optimal timing
+- ISO-8601 datetime - Specific time (e.g., `"2024-12-20T14:30:00Z"`)
 
-### Workflow 3: Cross-Post to Multiple Accounts
+### Workflow 4: Cross-Post to Multiple Accounts
 
-**Use Case:** Publish the same announcement across multiple branded accounts with unique content for each
+**Use Case:** Publish the same announcement across multiple accounts with unique content for each
 
 **Process:**
 1. Prepare content variations for each account
@@ -177,22 +220,23 @@ content_map = {
 results = manager.cross_post(
     accounts=["personal", "company"],
     content_map=content_map,
-    schedule=False  # Respect global config
+    platforms=["x"],
+    schedule=False
 )
 
-# Results show success/failure for each account
 for account, result in results.items():
-    print(f"{account}: {result}")
+    print(f"{account}: {result.get('edit_url', result.get('error'))}")
 ```
 
 **Command-line usage:**
 ```bash
 python scripts/typefully_client.py cross-post \
     --accounts personal company \
-    --content-json content.json
+    --content-json content.json \
+    --platforms x
 ```
 
-### Workflow 4: Retrieve Analytics
+### Workflow 5: Retrieve Analytics
 
 **Use Case:** Get performance data for recently published content
 
@@ -200,87 +244,59 @@ python scripts/typefully_client.py cross-post \
 ```python
 manager = TypefullyManager()
 
-analytics = manager.get_analytics(account="personal", days=7)
+analytics = manager.get_analytics(account="personal", limit=20)
 
-# Analytics includes:
-# - Recently published posts
-# - Engagement notifications
-# - Publishing activity
+print(f"Published: {analytics['stats']['published_count']}")
+print(f"Scheduled: {analytics['stats']['scheduled_count']}")
 ```
 
 **Command-line usage:**
 ```bash
 python scripts/typefully_client.py get-analytics \
     --account personal \
-    --days 7
+    --limit 20
 ```
 
-### Workflow 5: List Configured Accounts
+### Workflow 6: List Drafts by Status
 
-**Use Case:** Verify which accounts are configured
+**Use Case:** View all scheduled or draft posts
+
+**Draft Status Values:**
+- `draft` - Saved but not scheduled
+- `scheduled` - Queued for future publication
+- `publishing` - Currently being posted
+- `published` - Successfully posted
+- `error` - Publication failed
 
 **Command-line:**
 ```bash
-python scripts/typefully_client.py list-accounts
+# List all scheduled drafts
+python scripts/typefully_client.py get-drafts \
+    --account personal \
+    --status scheduled
+
+# List all drafts (any status)
+python scripts/typefully_client.py get-drafts \
+    --account personal \
+    --limit 50
 ```
 
-### Workflow 6: Monitor Notifications
+### Workflow 7: View Social Sets (Connected Platforms)
 
-**Use Case:** Track publishing events and engagement notifications
+**Use Case:** See which platforms are connected for an account
 
-**Notification Types:**
-- **activity**: Draft published, scheduled posts, AutoRT, AutoPlug events
-- **inbox**: Comments, replies, engagement notifications
-
-**Process:**
-```python
-manager = TypefullyManager()
-client = manager.get_client("personal")
-
-# Get activity notifications (publishing events)
-activity = client.get_notifications(kind="activity")
-
-# Get inbox notifications (engagement)
-inbox = client.get_notifications(kind="inbox")
-
-# Mark notifications as read
-client.mark_notifications_read(kind="activity")
-```
-
-**Command-line usage:**
+**Command-line:**
 ```bash
-# Get activity notifications
-python scripts/typefully_client.py get-notifications \
-    --account personal \
-    --kind activity
-
-# Get inbox notifications
-python scripts/typefully_client.py get-notifications \
-    --account personal \
-    --kind inbox
-
-# Mark notifications as read
-python scripts/typefully_client.py mark-notifications-read \
-    --account personal \
-    --kind activity
+python scripts/typefully_client.py list-social-sets --account personal
 ```
 
-**Notification Response:**
-```json
-{
-  "notifications": [
-    {
-      "id": "notif_123",
-      "kind": "activity",
-      "payload": {
-        "action": "draft_published",
-        "draft_id": "draft_xyz",
-        "url": "https://twitter.com/username/status/123",
-        "success": true
-      }
-    }
-  ]
-}
+**Response shows connected platforms:**
+```
+Social sets for personal:
+  - social_set_abc123: My Account
+    x: @myhandle (connected)
+    linkedin: (connected)
+    threads: (not connected)
 ```
 
 ## Thread Formatting
@@ -292,21 +308,18 @@ Use **4 consecutive newlines** (`\n\n\n\n`) to separate tweets in a thread:
 ```python
 content = """First tweet in the thread
 
+
+
 Second tweet with more details
+
+
 
 Third tweet wrapping up"""
 
-manager.create_draft(account="personal", content=content)
+manager.create_draft(account="personal", content=content, platforms=["x"])
 ```
 
-### Auto-Threadify
-
-Enable `threadify: true` (default) to automatically split long content based on Twitter's character limits:
-
-```python
-# Long content automatically split into tweets
-content = "Very long form content that exceeds Twitter's character limit will be automatically split into a thread by Typefully's threadify feature..."
-```
+The Python client automatically converts this to the API's posts array format.
 
 ## Integration with Other Skills
 
@@ -331,31 +344,33 @@ This skill can be integrated with other content creation and brand management wo
 ## API Reference
 
 For detailed API documentation, load `references/typefully_api.md` which includes:
-- Complete endpoint specifications
-- Request/response formats
+- Complete v2 endpoint specifications
+- Request/response formats with examples
+- Multi-platform content structure
+- Webhook events and verification
 - Error handling guidance
-- Rate limits and best practices
+- Migration notes from v1
 
 Load reference when:
 - Debugging API issues
 - Implementing custom functionality
 - Understanding response structures
-- Troubleshooting authentication
+- Setting up webhooks
 
 ## Error Handling
 
-The client provides clear, user-friendly error messages for common issues:
+The client provides clear, user-friendly error messages:
 
 - **401 Unauthorized**: "Invalid API key. Check your configuration and regenerate if needed."
 - **403 Forbidden**: "API key doesn't have permission for this operation."
-- **429 Rate Limit**: "Rate limit exceeded. Please wait a few minutes before trying again."
+- **429 Rate Limit**: "Rate limit exceeded. Please wait before trying again."
 - **400 Bad Request**: Detailed error message with specific parameter issues
 
 Common issues and solutions:
 
 **Account Not Found:**
 - Verify `.env` file contains `TYPEFULLY_API_KEY_<ACCOUNT>=key`
-- Check account name matches exactly (case-sensitive)
+- Check account name matches exactly (case-insensitive in manager)
 - Run `list-accounts` to see configured accounts
 
 **Scheduling Disabled Warning:**
@@ -363,15 +378,13 @@ Common issues and solutions:
 - Draft created for manual review
 - Enable in `config.json` only when ready
 
-**API Authentication Errors:**
-- Verify API key is correct
-- Check API key has permissions for the account
-- Ensure `X-API-KEY` header format is correct
+**No Social Sets Available:**
+- Connect at least one platform in Typefully dashboard
+- Verify API key is for correct Typefully account
 
-**Content Formatting Issues:**
-- Use 4 newlines to split threads
-- Enable `threadify` for auto-splitting
-- Verify content doesn't exceed platform limits
+**Platform Not Connected:**
+- The specified platform isn't connected in Typefully
+- Only enabled platforms will receive posts
 
 ## Best Practices
 
@@ -385,32 +398,61 @@ Common issues and solutions:
    - Maintain separate API keys per account
    - Organize content_map clearly for cross-posting
 
-3. **Content Quality:**
+3. **Multi-Platform Strategy:**
+   - X for quick updates and threads
+   - LinkedIn for professional announcements
+   - Test platform connections before important posts
+
+4. **Content Quality:**
    - Validate content before creating drafts
    - Use brand voice guidelines for multi-account scenarios
    - Test with personal accounts before company accounts
 
-4. **Error Resilience:**
+5. **Error Resilience:**
    - Handle API errors gracefully
-   - Provide clear error messages
    - Fall back to draft mode on scheduling failures
+   - Check rate limits when batch posting
 
-5. **Analytics Usage:**
-   - Retrieve analytics regularly
-   - Use data to inform content strategy
-   - Track engagement trends over time
+## CLI Commands Reference
 
-## Extending the Skill
+```bash
+# Create draft
+python scripts/typefully_client.py create-draft \
+    --account ACCOUNT \
+    --content "Content" \
+    --platforms x linkedin \
+    --schedule \
+    --schedule-date "next-free-slot" \
+    --title "Draft Title" \
+    --tags tag1 tag2
 
-The `typefully_client.py` script provides a foundation that can be extended:
+# Cross-post to multiple accounts
+python scripts/typefully_client.py cross-post \
+    --accounts account1 account2 \
+    --content-json content.json \
+    --platforms x \
+    --schedule
 
-- Add custom content transformation logic
-- Integrate with brand voice validation systems
-- Build automated scheduling based on optimal timing
-- Create custom analytics dashboards
-- Implement A/B testing workflows
+# List drafts
+python scripts/typefully_client.py get-drafts \
+    --account ACCOUNT \
+    --status scheduled \
+    --limit 20
 
-Modify the script as needed while maintaining the core API interaction patterns.
+# Get analytics
+python scripts/typefully_client.py get-analytics \
+    --account ACCOUNT \
+    --limit 20
+
+# List social sets (connected platforms)
+python scripts/typefully_client.py list-social-sets --account ACCOUNT
+
+# List configured accounts
+python scripts/typefully_client.py list-accounts
+
+# Get user info
+python scripts/typefully_client.py get-me --account ACCOUNT
+```
 
 ## Troubleshooting
 
@@ -426,4 +468,10 @@ Modify the script as needed while maintaining the core API interaction patterns.
 **Problem:** Cross-post fails for some accounts
 - **Solution:** Check each account's API key separately, ensure all are valid
 
-For additional support, consult the official Typefully API documentation: https://support.typefully.com/en/articles/8718287-typefully-api
+**Problem:** Platform not receiving posts
+- **Solution:** Verify platform is connected in Typefully social set
+
+**Problem:** "No social sets available"
+- **Solution:** Connect at least one platform in Typefully dashboard
+
+For additional support, consult the official Typefully API documentation: https://typefully.com/docs/api

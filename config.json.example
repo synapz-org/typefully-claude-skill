@@ -1,5 +1,5 @@
 {
   "scheduling_enabled": false,
-  "default_threadify": true,
+  "default_platforms": ["x"],
   "default_share": true
 }

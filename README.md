@@ -1,19 +1,29 @@
 # Typefully Claude Skill
 
-A Claude Code skill for managing social media content through the [Typefully](https://typefully.com) API. Create drafts, schedule posts, cross-post to multiple accounts, and retrieve analytics—all through conversational AI.
+A Claude Code skill for managing social media content through the [Typefully](https://typefully.com) API v2. Create drafts, schedule posts across multiple platforms (X, LinkedIn, Threads, Bluesky, Mastodon), cross-post to multiple accounts, and retrieve analytics—all through conversational AI.
 
 ## Features
 
-- **Draft Creation**: Create Twitter/X drafts with Claude's assistance
+- **Multi-Platform Publishing**: Post to X, LinkedIn, Threads, Bluesky, and Mastodon
+- **Draft Creation**: Create drafts with Claude's assistance
 - **Thread Management**: Automatically format and split content into threads
 - **Multi-Account Support**: Manage multiple social media accounts with separate API keys
 - **Cross-Posting**: Publish unique content variations across different accounts
+- **Social Sets**: View and manage connected platforms per account
+- **Draft Status Tracking**: Monitor draft, scheduled, publishing, published, error states
 - **Safe by Default**: Draft-only mode prevents accidental publishing
 - **Analytics**: Retrieve performance data and engagement metrics
-- **Notifications**: Monitor publishing events and engagement activity
 - **Enhanced URLs**: Automatic draft and preview URLs in all responses
 - **Improved Error Messages**: Clear, actionable error descriptions
 - **Command-Line Interface**: Use directly via CLI or through Claude Code
+
+## Supported Platforms
+
+- **X (Twitter)** - Tweets and threads
+- **LinkedIn** - Professional posts
+- **Threads** - Meta's text-based platform
+- **Bluesky** - Decentralized social network
+- **Mastodon** - Federated social platform
 
 ## Prerequisites
 
@@ -59,7 +69,9 @@ A Claude Code skill for managing social media content through the [Typefully](ht
 1. Log into your [Typefully dashboard](https://typefully.com)
 2. Navigate to **Settings > Integrations**
 3. Generate an API key for each social media account you want to manage
-4. **Important**: Each social media account requires its own API key
+4. **Important**: API keys inherit permissions from your user account
+   - WRITE permission: Create drafts
+   - PUBLISH permission: Schedule and publish
 
 ### 2. Create Configuration Files
 
@@ -73,8 +85,8 @@ cp config.json.example config.json
 Edit `.env` with your API keys:
 
 ```bash
-TYPEFULLY_API_KEY_PERSONAL=your_personal_twitter_key
-TYPEFULLY_API_KEY_COMPANY=your_company_twitter_key
+TYPEFULLY_API_KEY_PERSONAL=your_personal_key
+TYPEFULLY_API_KEY_COMPANY=your_company_key
 ```
 
 Edit `config.json` for settings:
@@ -82,7 +94,7 @@ Edit `config.json` for settings:
 ```json
 {
   "scheduling_enabled": false,
-  "default_threadify": true,
+  "default_platforms": ["x"],
   "default_share": true
 }
 ```
@@ -91,6 +103,7 @@ Edit `config.json` for settings:
 
 - **`scheduling_enabled: false`** (default): Creates drafts only, no auto-publishing
 - **`scheduling_enabled: true`**: Enables automatic scheduling (use with caution)
+- **`default_platforms: ["x"]`**: Default platforms for posts (can specify multiple)
 
 We recommend keeping `scheduling_enabled: false` until you're confident in content quality.
 
@@ -102,8 +115,9 @@ Once installed as a skill, simply ask Claude:
 
 ```
 "Create a Twitter thread about AI ethics for my personal account"
+"Post this announcement to both X and LinkedIn"
 "Cross-post this product announcement to company and project accounts"
-"Show me last week's Twitter analytics for my personal account"
+"Show me last week's analytics for my personal account"
 ```
 
 Claude will automatically use the Typefully skill to handle these requests.
@@ -112,12 +126,22 @@ Claude will automatically use the Typefully skill to handle these requests.
 
 The skill includes a Python client for direct CLI usage:
 
-#### Create a Draft
+#### Create a Draft (Single Platform)
 
 ```bash
 python scripts/typefully_client.py create-draft \
   --account personal \
-  --content "Your tweet content here"
+  --content "Your tweet content here" \
+  --platforms x
+```
+
+#### Create Multi-Platform Draft
+
+```bash
+python scripts/typefully_client.py create-draft \
+  --account personal \
+  --content "Cross-platform announcement" \
+  --platforms x linkedin
 ```
 
 #### Create a Thread
@@ -129,9 +153,14 @@ python scripts/typefully_client.py create-draft \
   --account personal \
   --content "First tweet
 
+
+
 Second tweet
 
-Third tweet"
+
+
+Third tweet" \
+  --platforms x
 ```
 
 #### Schedule a Post
@@ -140,8 +169,9 @@ Third tweet"
 python scripts/typefully_client.py create-draft \
   --account company \
   --content "Scheduled announcement" \
+  --platforms x \
   --schedule \
-  --schedule-date "2024-12-01T14:30:00Z"
+  --schedule-date "next-free-slot"
 ```
 
 #### Cross-Post to Multiple Accounts
@@ -158,7 +188,16 @@ Execute cross-post:
 ```bash
 python scripts/typefully_client.py cross-post \
   --accounts personal company \
-  --content-json content.json
+  --content-json content.json \
+  --platforms x
+```
+
+#### List Drafts by Status
+
+```bash
+python scripts/typefully_client.py get-drafts \
+  --account personal \
+  --status scheduled
 ```
 
 #### Get Analytics
@@ -166,7 +205,13 @@ python scripts/typefully_client.py cross-post \
 ```bash
 python scripts/typefully_client.py get-analytics \
   --account personal \
-  --days 7
+  --limit 20
+```
+
+#### List Social Sets (Connected Platforms)
+
+```bash
+python scripts/typefully_client.py list-social-sets --account personal
 ```
 
 #### List Configured Accounts
@@ -175,26 +220,10 @@ python scripts/typefully_client.py get-analytics \
 python scripts/typefully_client.py list-accounts
 ```
 
-#### Get Notifications
+#### Get User Info
 
 ```bash
-# Get activity notifications (publishing events)
-python scripts/typefully_client.py get-notifications \
-  --account personal \
-  --kind activity
-
-# Get inbox notifications (engagement)
-python scripts/typefully_client.py get-notifications \
-  --account personal \
-  --kind inbox
-```
-
-#### Mark Notifications as Read
-
-```bash
-python scripts/typefully_client.py mark-notifications-read \
-  --account personal \
-  --kind activity
+python scripts/typefully_client.py get-me --account personal
 ```
 
 ## Python API Usage
@@ -205,11 +234,21 @@ from typefully_client import TypefullyManager
 # Initialize (automatically loads .env configuration)
 manager = TypefullyManager()
 
-# Create a draft
+# Create a draft for X
 result = manager.create_draft(
     account="personal",
     content="Your tweet content",
-    schedule=False  # Draft only
+    platforms=["x"],
+    schedule=False
+)
+
+# Create multi-platform draft
+result = manager.create_draft(
+    account="personal",
+    content="Cross-platform announcement",
+    platforms=["x", "linkedin"],
+    schedule=True,
+    schedule_date="next-free-slot"
 )
 
 # Cross-post with unique content
@@ -221,19 +260,15 @@ content_map = {
 results = manager.cross_post(
     accounts=["personal", "company"],
     content_map=content_map,
+    platforms=["x"],
     schedule=False
 )
 
 # Get analytics
-analytics = manager.get_analytics(account="personal", days=7)
+analytics = manager.get_analytics(account="personal", limit=20)
 
-# Get notifications
-client = manager.get_client("personal")
-activity = client.get_notifications(kind="activity")
-inbox = client.get_notifications(kind="inbox")
-
-# Mark notifications as read
-client.mark_notifications_read(kind="activity")
+# List social sets (connected platforms)
+sets = manager.get_social_sets_info(account="personal")
 ```
 
 ## Thread Formatting
@@ -245,14 +280,26 @@ Use **4 consecutive newlines** to separate tweets:
 ```python
 content = """First tweet
 
+
+
 Second tweet
+
+
 
 Third tweet"""
 ```
 
-### Auto-Threadify
+The Python client automatically converts this to the API's posts array format.
 
-Enable `threadify: true` (default) to automatically split long content based on Twitter's character limits.
+## API v2 Changes
+
+This skill uses Typefully API v2 which includes:
+- **Social Sets**: Accounts are organized into social sets with connected platforms
+- **Multi-Platform**: Post to X, LinkedIn, Threads, Bluesky, Mastodon
+- **New Auth**: Uses `Authorization: Bearer` header
+- **Draft Status**: New status values including `publishing` and `error`
+- **Pagination**: Proper limit-offset pagination on list endpoints
+- **Webhooks**: Support for draft lifecycle events
 
 ## Project Structure
 
@@ -263,9 +310,9 @@ typefully-claude-skill/
 ├── .env.example                # API key template
 ├── config.json.example         # Configuration template
 ├── scripts/
-│   └── typefully_client.py     # Python API client
+│   └── typefully_client.py     # Python API client (v2)
 └── references/
-    └── typefully_api.md        # Detailed API documentation
+    └── typefully_api.md        # API v2 documentation
 ```
 
 ## Contributing
@@ -292,7 +339,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Documentation**: See [SKILL.md](SKILL.md) for detailed usage instructions
 - **API Reference**: See [references/typefully_api.md](references/typefully_api.md)
-- **Typefully API Docs**: https://support.typefully.com/en/articles/8718287-typefully-api
+- **Typefully API Docs**: https://typefully.com/docs/api
 - **Issues**: https://github.com/synapz-org/typefully-claude-skill/issues
 
 ## Disclaimer
