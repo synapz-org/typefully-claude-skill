@@ -35,17 +35,12 @@ A Claude Code skill for managing social media content through the [Typefully](ht
 
 ### Option 1: Install as Claude Code Skill
 
-1. Download the skill:
-   ```bash
-   wget https://github.com/synapz-org/typefully-claude-skill/releases/latest/download/typefully.zip
+1. Download and install:
+   ```
+   /skills install https://github.com/synapz-org/typefully-claude-skill/releases/latest/download/typefully-claude-skill-v2.0.0.zip
    ```
 
-2. Install in Claude Code:
-   ```
-   /skills install typefully.zip
-   ```
-
-3. Configure your API keys (see [Configuration](#configuration))
+2. Configure your API key (see [Configuration](#configuration))
 
 ### Option 2: Standalone Usage
 
