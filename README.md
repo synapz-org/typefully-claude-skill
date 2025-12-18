@@ -82,12 +82,14 @@ cp .env.example .env
 cp config.json.example config.json
 ```
 
-Edit `.env` with your API keys:
+Edit `.env` with your API key:
 
 ```bash
-TYPEFULLY_API_KEY_PERSONAL=your_personal_key
-TYPEFULLY_API_KEY_COMPANY=your_company_key
+# Single key provides access to all your social sets (accounts)
+TYPEFULLY_API_KEY=your_api_key_here
 ```
+
+**Note:** In API v2, one key gives access to ALL social sets you have permission for. The skill auto-discovers available accounts.
 
 Edit `config.json` for settings:
 

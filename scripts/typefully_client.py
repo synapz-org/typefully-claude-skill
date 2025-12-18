@@ -8,9 +8,9 @@ scheduling, and analytics across multiple platforms and social sets.
 Supports: X (Twitter), LinkedIn, Mastodon, Threads, Bluesky
 
 Usage:
-    python typefully_client.py create-draft --account "personal" --content "Your tweet content"
-    python typefully_client.py list-social-sets --account "personal"
-    python typefully_client.py get-drafts --account "personal" --status scheduled
+    python typefully_client.py create-draft --account "covenant" --content "Your tweet content"
+    python typefully_client.py list-social-sets --account "covenant"
+    python typefully_client.py get-drafts --account "covenant" --status scheduled
 """
 
 import os
@@ -396,7 +396,7 @@ class TypefullyClient:
 
 
 class TypefullyManager:
-    """Manager for handling multiple Typefully accounts"""
+    """Manager for Typefully API v2 with social sets support"""
 
     def __init__(self, config_path: Optional[str] = None):
         """
@@ -406,28 +406,32 @@ class TypefullyManager:
             config_path: Path to .env file or config directory
         """
         self.config_path = config_path or os.path.dirname(__file__)
-        self.accounts = self._load_accounts()
         self.config = self._load_config()
+        self.client: Optional[TypefullyClient] = None
+        self._social_sets: Optional[List[Dict]] = None
+        self._social_set_map: Optional[Dict[str, int]] = None
+        self._init_client()
 
-    def _load_accounts(self) -> Dict[str, TypefullyClient]:
-        """Load API keys from .env file and create clients"""
+    def _init_client(self) -> None:
+        """Initialize the API client from .env file"""
         env_path = Path(self.config_path) / ".env"
-        accounts = {}
 
         if not env_path.exists():
             print(f"Warning: .env file not found at {env_path}")
-            print("Create a .env file with: TYPEFULLY_API_KEY_<ACCOUNT>=your_key_here")
-            return accounts
+            print("Create a .env file with: TYPEFULLY_API_KEY=your_key_here")
+            return
 
+        api_key = None
         with open(env_path) as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith("#") and "TYPEFULLY_API_KEY_" in line:
-                    key, value = line.split("=", 1)
-                    account_name = key.replace("TYPEFULLY_API_KEY_", "").lower()
-                    accounts[account_name] = TypefullyClient(value)
+                if line and not line.startswith("#"):
+                    if line.startswith("TYPEFULLY_API_KEY="):
+                        api_key = line.split("=", 1)[1]
+                        break
 
-        return accounts
+        if api_key:
+            self.client = TypefullyClient(api_key)
 
     def _load_config(self) -> Dict:
         """Load configuration settings"""
@@ -435,7 +439,8 @@ class TypefullyManager:
         default_config = {
             "scheduling_enabled": False,  # Safety: draft-only by default
             "default_platforms": ["x"],  # Default to X/Twitter
-            "default_share": True
+            "default_share": True,
+            "brand_voice_validation": True
         }
 
         if config_path.exists():
@@ -444,16 +449,57 @@ class TypefullyManager:
 
         return default_config
 
-    def get_client(self, account: str) -> TypefullyClient:
-        """Get client for specific account"""
-        if account not in self.accounts:
-            available = ", ".join(self.accounts.keys()) or "(none)"
-            raise ValueError(f"Account '{account}' not found. Available: {available}")
-        return self.accounts[account]
+    def _ensure_social_sets(self) -> None:
+        """Fetch and cache social sets if not already loaded"""
+        if self._social_sets is None:
+            if not self.client:
+                raise ValueError("No API key configured. Add TYPEFULLY_API_KEY to .env")
+            self._social_sets = self.client.get_social_sets()
+            # Build name -> id mapping (lowercase names for easy lookup)
+            self._social_set_map = {}
+            for ss in self._social_sets:
+                name = ss.get("name", "").lower()
+                username = ss.get("username", "").lower()
+                ss_id = ss.get("id")
+                if name:
+                    self._social_set_map[name] = ss_id
+                if username:
+                    self._social_set_map[username] = ss_id
+
+    def get_social_set_id(self, account: str) -> int:
+        """
+        Get social set ID for an account name
+
+        Args:
+            account: Account name or username (case-insensitive)
+
+        Returns:
+            Social set ID
+        """
+        self._ensure_social_sets()
+        account_lower = account.lower()
+
+        if account_lower in self._social_set_map:
+            return self._social_set_map[account_lower]
+
+        # Try partial match
+        for name, ss_id in self._social_set_map.items():
+            if account_lower in name or name in account_lower:
+                return ss_id
+
+        available = ", ".join(self._social_set_map.keys())
+        raise ValueError(f"Account '{account}' not found. Available: {available}")
+
+    def get_client(self, account: str = None) -> TypefullyClient:
+        """Get the API client (account parameter kept for compatibility)"""
+        if not self.client:
+            raise ValueError("No API key configured. Add TYPEFULLY_API_KEY to .env")
+        return self.client
 
     def list_accounts(self) -> List[str]:
-        """List all configured account names"""
-        return list(self.accounts.keys())
+        """List all available social set names"""
+        self._ensure_social_sets()
+        return list(self._social_set_map.keys())
 
     def create_draft(
         self,
@@ -469,7 +515,7 @@ class TypefullyManager:
         Create draft for specific account (respects scheduling config)
 
         Args:
-            account: Account name (e.g., "personal", "company")
+            account: Account name (e.g., "covenant", "basilica")
             content: Post content
             schedule: Whether to schedule (only if globally enabled)
             schedule_date: When to schedule (ISO, "now", or "next-free-slot")
@@ -480,7 +526,7 @@ class TypefullyManager:
         Returns:
             API response with draft details
         """
-        client = self.get_client(account)
+        social_set_id = self.get_social_set_id(account)
 
         # Use default platforms if not specified
         if platforms is None:
@@ -495,8 +541,9 @@ class TypefullyManager:
             else:
                 publish_at = schedule_date or "next-free-slot"
 
-        return client.create_draft(
+        return self.client.create_draft(
             content=content,
+            social_set_id=social_set_id,
             platforms=platforms,
             publish_at=publish_at,
             share=self.config["default_share"],
@@ -557,11 +604,11 @@ class TypefullyManager:
         Returns:
             Analytics summary with recent published and scheduled drafts
         """
-        client = self.get_client(account)
+        social_set_id = self.get_social_set_id(account)
 
         try:
-            published = client.get_published_drafts(limit=limit)
-            scheduled = client.get_scheduled_drafts()
+            published = self.client.get_published_drafts(social_set_id=social_set_id, limit=limit)
+            scheduled = self.client.get_scheduled_drafts(social_set_id=social_set_id)
 
             return {
                 "account": account,
@@ -575,18 +622,15 @@ class TypefullyManager:
         except Exception as e:
             return {"account": account, "error": str(e)}
 
-    def get_social_sets_info(self, account: str) -> List[Dict]:
+    def get_social_sets_info(self, account: str = None) -> List[Dict]:
         """
-        Get social sets (platform accounts) for an account
-
-        Args:
-            account: Account name
+        Get all social sets (account parameter ignored in v2)
 
         Returns:
             List of social sets with platform info
         """
-        client = self.get_client(account)
-        return client.get_social_sets()
+        self._ensure_social_sets()
+        return self._social_sets
 
 
 def main():
@@ -625,15 +669,13 @@ def main():
     analytics_parser.add_argument("--limit", type=int, default=20, help="Number of recent drafts")
 
     # list-social-sets command
-    sets_parser = subparsers.add_parser("list-social-sets", help="List social sets for account")
-    sets_parser.add_argument("--account", required=True, help="Account name")
+    subparsers.add_parser("list-social-sets", help="List all available social sets")
 
     # list-accounts command
-    subparsers.add_parser("list-accounts", help="List configured accounts")
+    subparsers.add_parser("list-accounts", help="List available accounts (social sets)")
 
     # get-me command
-    me_parser = subparsers.add_parser("get-me", help="Get user info")
-    me_parser.add_argument("--account", required=True, help="Account name")
+    subparsers.add_parser("get-me", help="Get user info")
 
     args = parser.parse_args()
 
@@ -677,9 +719,9 @@ def main():
         print(json.dumps(results, indent=2))
 
     elif args.command == "get-drafts":
-        client = manager.get_client(args.account)
-        drafts = client.get_drafts(status=args.status, limit=args.limit)
-        print(f"Found {len(drafts)} drafts")
+        social_set_id = manager.get_social_set_id(args.account)
+        drafts = manager.client.get_drafts(social_set_id=social_set_id, status=args.status, limit=args.limit)
+        print(f"Found {len(drafts)} drafts for {args.account}")
         print(json.dumps(drafts, indent=2))
 
     elif args.command == "get-analytics":
@@ -687,22 +729,22 @@ def main():
         print(json.dumps(result, indent=2))
 
     elif args.command == "list-social-sets":
-        sets = manager.get_social_sets_info(args.account)
-        print(f"Social sets for {args.account}:")
+        sets = manager.get_social_sets_info()
+        print("Available social sets:")
         for s in sets:
-            print(f"  - {s.get('id')}: {s.get('name', 'unnamed')}")
+            username = s.get('username', '')
+            print(f"  - {s.get('id')}: {s.get('name', 'unnamed')} (@{username})")
         print(json.dumps(sets, indent=2))
 
     elif args.command == "list-accounts":
-        print("Configured accounts:")
+        print("Available accounts (social sets):")
         for account in manager.list_accounts():
             print(f"  - {account}")
-        if not manager.accounts:
-            print("  (none - check your .env file)")
+        if not manager.list_accounts():
+            print("  (none - check your API key)")
 
     elif args.command == "get-me":
-        client = manager.get_client(args.account)
-        result = client.get_me()
+        result = manager.client.get_me()
         print(json.dumps(result, indent=2))
 
 
